@@ -30,79 +30,81 @@ const generateAccessAndRefreshTokens = async (userID) => {
 }
 
 const registerUser = asyncHandler(async (req, res) => {
-    // Get user details from frontend
-    // Validation (not empty, valid email, password strength, etc.)
-    // Check if user already exists in the database: username or email
-    // Check for image and avatar
-    // Upload to cloudinary, avatar
-    // Create new user object - create entry in db
-    // remove password and refresh token field from the response
-    // check for user creation success and send response to frontend
-    // return res
-
+    // Extract and validate user input
     const { fullName, email, username, password } = req.body;
-    console.log("email: ", email, "\n", "password: ", password, "\n", "username: ", username, "\n", "fullName: ", fullName);
 
+    // Ensure no required field is empty or just whitespace
     if ([fullName, email, username, password].some(field => !field || field.trim() === "")) {
         throw new ApiError(400, "All fields are required");
     }
 
+    // Normalize email and username for case‑insensitive storage and uniqueness checks
     const normalizedEmail = email.toLowerCase();
     const normalizedUsername = username.toLowerCase();
 
+    // Check for existing user with the same email or username
     const existedUser = await User.findOne({
         $or: [
             { email: normalizedEmail },
             { username: normalizedUsername }
         ]
     });
-
-
     if (existedUser) {
         throw new ApiError(409, "User with email or username already exists");
     }
 
+    // Password strength: minimum length (hashing is expected in the User model’s pre‑save hook)
     if (password.length < 8) {
         throw new ApiError(400, "Password must be at least 8 characters");
     }
 
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     if (!emailRegex.test(email)) {
         throw new ApiError(400, "Invalid email");
     }
 
+    // Extract uploaded file paths (multer populates req.files)
     const avatarLocalPath = req.files?.avatar?.[0]?.path;
     const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
 
+    // Avatar is required
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar file is required");
     }
 
+    // Upload avatar (and optionally cover image) to Cloudinary
     const avatar = await uploadOnCloudinary(avatarLocalPath);
-    const coverImage = coverImageLocalPath ? await uploadOnCloudinary(coverImageLocalPath) : null;
+    const coverImage = coverImageLocalPath
+        ? await uploadOnCloudinary(coverImageLocalPath)
+        : null;
 
+    // Ensure avatar upload succeeded
     if (!avatar) {
         throw new ApiError(400, "Failed to upload avatar to Cloudinary");
     }
 
+    // Create the user document (password will be hashed by Mongoose pre‑save hook)
     const user = await User.create({
         fullName: fullName.trim(),
         email: normalizedEmail,
         username: normalizedUsername,
         password,
         avatar: avatar.url,
-        coverImage: coverImage ? coverImage.url : ""
+        coverImage: coverImage?.url || ""
     });
 
+    // Fetch the user again, excluding sensitive fields from the response
     const createdUser = await User.findById(user._id).select("-password -refreshToken");
 
     if (!createdUser) {
         throw new ApiError(500, "Something went wrong while registering the user. Please try again later.");
     }
 
-    return res.status(201).json(new ApiResponse(201, createdUser, "User registered successfully"));
-
+    // Send successful creation response with 201 status
+    return res.status(201).json(
+        new ApiResponse(201, createdUser, "User registered successfully")
+    );
 });
 
 const loginUser = asyncHandler(async (req, res) => {
