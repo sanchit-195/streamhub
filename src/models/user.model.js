@@ -48,13 +48,14 @@ const userSchema = new Schema({
     timestamps: true
 });
 
+// Pre‑save Middleware (Hashing the Password)
 userSchema.pre('save', async function(next) {
 
-    if (!this.isModified('password')) {
+    if (!this.isModified('password')) {  // this refers to the current document being saved
         return;
     }
 
-    this.password = await bcrypt.hash(this.password, 10);
+    this.password = await bcrypt.hash(this.password, 10); // bcrypt.hash(plainText, saltRounds) generates a salted hash of the password.
 });
 
 userSchema.methods.isPasswordCorrect = async function(password) {
